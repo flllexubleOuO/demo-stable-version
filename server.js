@@ -5,6 +5,7 @@ const path = require('node:path');
 const { createTranslationService } = require('./translation-service.cjs');
 
 const root = __dirname;
+const version = '0.3.0';
 const port = Number(process.env.PORT || 4173);
 const translationService = createTranslationService();
 const diagnosticDirectory = path.join(root, 'logs');
@@ -104,12 +105,13 @@ async function handleSettings(request, response) {
 }
 
 function serveStatic(request, response, requestedPath) {
-  // 静态文件只允许从项目根目录读取，避免路径跳出工作区。
-  const filePath = path.resolve(root, `.${requestedPath}`);
-  if (!filePath.startsWith(root + path.sep)) {
-    response.writeHead(403);
-    return response.end('Forbidden');
+  // 仅发布前端白名单文件，禁止通过静态路由读取服务端源码、日志和配置。
+  const publicFiles = new Set(['/index.html', '/style.css', '/app.js', '/speech-capture.js', '/audio-capture.js', '/audio-worklet-processor.js', '/translation-queue.js', '/diagnostics.js']);
+  if (!publicFiles.has(requestedPath)) {
+    response.writeHead(404);
+    return response.end('Not found');
   }
+  const filePath = path.join(root, requestedPath.slice(1));
 
   fs.readFile(filePath, (error, contents) => {
     if (error) {
@@ -124,6 +126,22 @@ function serveStatic(request, response, requestedPath) {
 
 const server = http.createServer(async (request, response) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+
+  if (pathname === '/healthz') {
+    if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' }, { Allow: 'GET' });
+    return sendJson(response, 200, { status: 'ok', version, asr: { configured: translationService.isRealtimeAsrConfigured(), provider: 'gemini', model: 'gemini-3.5-transcribe-live' } });
+  }
+  if (pathname === '/api/asr/session') {
+    if (request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
+    try {
+      const body = await readJsonBody(request, 2000);
+      const language = typeof body.language === 'string' && /^[a-z]{2}(?:-[A-Z]{2})?$/.test(body.language) ? body.language : 'en-US';
+      const temporaryCredential = await translationService.createRealtimeTranscriptionSecret(language);
+      return sendJson(response, 200, temporaryCredential, { 'Cache-Control': 'no-store' });
+    } catch (error) {
+      return sendJson(response, error.status || 502, { error: error.message || 'Could not create an ASR session.' });
+    }
+  }
 
   if (pathname === '/api/translate' || pathname === '/api/translate-batch') {
     return handleTranslation(request, response);

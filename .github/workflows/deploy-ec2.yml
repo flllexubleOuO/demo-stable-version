@@ -1,0 +1,81 @@
+name: Check and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lingua-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Validate Node.js files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check translation-service.cjs
+          node --check app.js
+          node --check speech-capture.js
+          node --check audio-capture.js
+          node --check audio-worklet-processor.js
+          node --check translation-queue.js
+          node --check diagnostics.js
+
+  deploy:
+    name: Deploy to EC2
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_PATH: ${{ vars.EC2_DEPLOY_PATH }}
+      SERVICE_NAME: ${{ vars.EC2_SERVICE_NAME }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Sync application files
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          test -n "$DEPLOY_PATH"
+          test -n "$SERVICE_NAME"
+          rsync -az --delete \
+            --exclude='.git/' --exclude='.github/' --exclude='logs/' \
+            --exclude='.env' --exclude='.env.*' --exclude='node_modules/' \
+            -e 'ssh -i ~/.ssh/id_ed25519' ./ "$EC2_USER@$EC2_HOST:$DEPLOY_PATH/"
+
+      - name: Restart service and verify health
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "$EC2_USER@$EC2_HOST" \
+            "sudo systemctl restart '$SERVICE_NAME' && sudo systemctl is-active --quiet '$SERVICE_NAME' && for attempt in 1 2 3 4 5 6 7 8 9 10; do if curl --fail --silent http://127.0.0.1:4173/healthz; then exit 0; fi; sleep 2; done; sudo systemctl status '$SERVICE_NAME' --no-pager; exit 1"

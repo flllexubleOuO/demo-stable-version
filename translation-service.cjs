@@ -118,6 +118,34 @@ function createTranslationService({ env = process.env, fetchImpl = fetch } = {})
     return getSettings();
   }
 
+  async function createRealtimeTranscriptionSecret(language = 'en') {
+    const apiKey = runtimeKeys.gemini;
+    if (!apiKey) throw makeError('Configure a Gemini API key in Settings before starting live transcription.', 503);
+    const response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uses: 1,
+        expireTime: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        newSessionExpireTime: new Date(Date.now() + 60 * 1000).toISOString(),
+        liveConnectConstraints: {
+          model: 'models/gemini-3.5-transcribe-live',
+          config: {
+            generationConfig: { responseModalities: ['TEXT'] },
+            inputAudioTranscription: { languageCodes: [language] },
+            realtimeInputConfig: { automaticActivityDetection: { disabled: false } }
+          }
+        }
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw makeError(data.error?.message || `Gemini Live token creation failed (${response.status}).`, response.status);
+    if (!data.name) throw makeError('Gemini returned no temporary transcription credential.');
+    return { value: data.name, expiresAt: data.expireTime };
+  }
+
+  function isRealtimeAsrConfigured() { return Boolean(runtimeKeys.gemini); }
+
   async function waitForGeminiSlot(model) {
     const previousRequest = geminiQueues.get(model) || Promise.resolve();
     const reservedSlot = previousRequest.catch(() => {}).then(async () => {
@@ -277,7 +305,7 @@ function createTranslationService({ env = process.env, fetchImpl = fetch } = {})
     return result;
   }
 
-  return { getSettings, configure, translate };
+  return { getSettings, configure, translate, createRealtimeTranscriptionSecret, isRealtimeAsrConfigured };
 }
 
 module.exports = { createTranslationService };

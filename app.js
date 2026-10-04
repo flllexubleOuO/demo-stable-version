@@ -1,4 +1,4 @@
-import { createSpeechCapture } from './speech-capture.js';
+import { createRealtimeAsr } from './audio-capture.js';
 import { createTranslationQueue } from './translation-queue.js';
 import { logDiagnostic } from './diagnostics.js';
 
@@ -406,20 +406,25 @@ const translationQueue = createTranslationQueue({
   }
 });
 
-const speech = createSpeechCapture({
-  getSourceLanguage: () => source.value,
-  onDraft: showDraft,
-  onChunk: renderCommittedChunk,
-  onRevision: reviseTranscriptSegment,
+const speech = createRealtimeAsr({
+  onDraft: (text, itemId = 'live') => showDraft(text, `asr:${itemId}`),
+  onChunk: (text, metadata = {}) => {
+    showDraft('', `asr:${metadata.itemId || 'live'}`);
+    if (!text.trim()) return;
+    const row = addMessage(text.trim(), false);
+    row.translationNode.textContent = `ASR final · ${metadata.latencyMs ?? 'n/a'} ms`;
+    row.wrapper.dataset.asrLatencyMs = String(metadata.latencyMs ?? '');
+    logDiagnostic('ASR', 'transcript-final', { latencyMs: metadata.latencyMs, captureLatencyMs: metadata.captureLatencyMs, itemId: metadata.itemId });
+  },
   onStatus: setStatus,
   onListening: updateMicUI,
-  onError: toast
+  onError: error => toast(error.message || String(error))
 });
 
 // 页面操作：清空、语言切换、录音控制和设置对话框。
 function clearConversation() {
   // 先清空各模块内部状态，再删除对应的界面节点。
-  speech.clear();
+  speech.stop();
   translationQueue.cancel('');
   transcript.querySelectorAll('.message, .message-interim').forEach(node => node.remove());
   draftRows.clear();
