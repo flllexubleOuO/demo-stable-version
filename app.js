@@ -158,9 +158,26 @@ function readProviderSettings() {
   return { provider, model };
 }
 
-function enqueueTranslation(text, row) {
+function enqueueTranslation(text, row, timing = {}) {
   const { provider, model } = readProviderSettings();
   const requestVersion = ++row.translationRequestVersion;
+  const requestedAt = performance.now();
+  const speechStartedAt = timing.speechStartedAt ?? (Number(row.wrapper.dataset.speechStartedAt) || 0);
+  const audioToTranscriptMs = timing.audioToTranscriptMs ?? (Number(row.wrapper.dataset.audioToTranscriptMs) || null);
+  const recordTiming = status => {
+    if (!speechStartedAt) return;
+    logDiagnostic('Translation', status, {
+      itemId: row.wrapper.dataset.asrItemId || null,
+      status: status === 'translation-completed' ? 'success' : 'failed',
+      audioToTranslationMs: Math.round(performance.now() - speechStartedAt),
+      audioToTranscriptMs,
+      translationRequestMs: Math.round(performance.now() - requestedAt),
+      source: source.value,
+      target: target.value,
+      provider,
+      model
+    });
+  };
   translationQueue.enqueue({
     provider,
     model,
@@ -168,7 +185,10 @@ function enqueueTranslation(text, row) {
     target: target.value,
     text
   }, translation => {
-    if (requestVersion === row.translationRequestVersion) row.translationNode.textContent = translation;
+    if (requestVersion !== row.translationRequestVersion) return;
+    row.translationNode.textContent = translation;
+    if (translation.startsWith('Translation failed:')) recordTiming('translation-failed');
+    else recordTiming('translation-completed');
   }, status => {
     if (requestVersion === row.translationRequestVersion) row.translationNode.textContent = status;
   });
@@ -416,8 +436,11 @@ const speech = createRealtimeAsr({
     const row = addMessage(finalText, false);
     row.translationNode.textContent = 'Translating…';
     row.wrapper.dataset.asrLatencyMs = String(metadata.latencyMs ?? '');
+    row.wrapper.dataset.audioToTranscriptMs = String(metadata.audioToTranscriptMs ?? '');
+    row.wrapper.dataset.speechStartedAt = String(metadata.speechStartedAt ?? '');
+    row.wrapper.dataset.asrItemId = metadata.itemId || '';
     logDiagnostic('ASR', 'transcript-final', { latencyMs: metadata.latencyMs, captureLatencyMs: metadata.captureLatencyMs, itemId: metadata.itemId });
-    enqueueTranslation(finalText, row);
+    enqueueTranslation(finalText, row, metadata);
   },
   onStatus: setStatus,
   onListening: updateMicUI,

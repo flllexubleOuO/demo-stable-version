@@ -10,7 +10,7 @@ function languageCode(value) {
 
 export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onStatus = () => {}, onListening = () => {}, onError = () => {} } = {}) {
   let stream = null, context = null, node = null, socket = null;
-  let active = false, ready = false, lastVoicedAt = 0;
+  let active = false, ready = false, lastVoicedAt = 0, speechStartedAt = 0;
   let captureStartedAt = 0;
 
   function send(event) {
@@ -37,7 +37,11 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
         binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
       }
       send({ realtimeInput: { audio: { data: btoa(binary), mimeType: `audio/pcm;rate=${OUTPUT_RATE}` } } });
-      if (data.rms >= SILENCE_THRESHOLD) lastVoicedAt = performance.now();
+      if (data.rms >= SILENCE_THRESHOLD) {
+        const voicedAt = performance.now();
+        if (!speechStartedAt) speechStartedAt = voicedAt;
+        lastVoicedAt = voicedAt;
+      }
     };
     source.connect(node);
     onListening(true, 'Listening · Gemini Live');
@@ -105,11 +109,20 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
         const content = message.serverContent;
         if (content?.interimInputTranscription?.text) onDraft(content.interimInputTranscription.text, 'gemini-live');
         if (content?.inputTranscription?.text) {
-          const latencyMs = lastVoicedAt ? Math.round(performance.now() - lastVoicedAt) : null;
+          const finalizedAt = performance.now();
+          const latencyMs = lastVoicedAt ? Math.round(finalizedAt - lastVoicedAt) : null;
+          const audioToTranscriptMs = speechStartedAt ? Math.round(finalizedAt - speechStartedAt) : null;
           onDraft('', 'gemini-live');
-          onChunk(content.inputTranscription.text, { itemId: `gemini-${Math.round(performance.now())}`, latencyMs, captureLatencyMs: Math.round(performance.now() - captureStartedAt) });
+          onChunk(content.inputTranscription.text, {
+            itemId: `gemini-${Math.round(finalizedAt)}`,
+            latencyMs,
+            audioToTranscriptMs,
+            speechStartedAt,
+            captureLatencyMs: Math.round(finalizedAt - captureStartedAt)
+          });
           onStatus(`Transcript received · final ${latencyMs ?? 'n/a'} ms after last voiced audio`);
           lastVoicedAt = 0;
+          speechStartedAt = 0;
         }
       });
       socket.addEventListener('error', () => { if (active) onError(new Error('Gemini Live WebSocket connection failed.')); });

@@ -42,7 +42,9 @@ function scheduleDiagnosticFlush() {
 }
 
 export function logDiagnostic(scope, event, details = {}) {
-  if (!isDiagnosticLoggingEnabled()) return;
+  const isTranslationTiming = scope === 'Translation'
+    && (event === 'translation-completed' || event === 'translation-failed');
+  if (!isDiagnosticLoggingEnabled() && !isTranslationTiming) return;
 
   const record = {
     timestamp: new Date().toISOString(),

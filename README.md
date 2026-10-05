@@ -29,7 +29,7 @@ Then open <http://127.0.0.1:4173/>, choose Gemini in Settings, and save a Gemini
 
 ## Diagnostics
 
-Enable diagnostic logging with `?debugSpeech=1`. Logs are written to `logs/diagnostics.jsonl` and may contain recognized speech. The `logs/` directory is excluded by `.gitignore` and is not included in the repository.
+Translation timing is always written to `logs/diagnostics.jsonl` without transcript text. Each completed or failed translation records end-to-end time from the first voiced audio frame detected in the browser through receipt of the translation, plus ASR and translation-request durations, language direction, provider, and model. Enable additional speech diagnostics with `?debugSpeech=1`; those logs may contain recognized speech. The `logs/` directory is excluded by `.gitignore` and is not included in the repository.
 
 ## GitHub Actions 部署到 EC2
 
