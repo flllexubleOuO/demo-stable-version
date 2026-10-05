@@ -128,13 +128,11 @@ function createTranslationService({ env = process.env, fetchImpl = fetch } = {})
         uses: 1,
         expireTime: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         newSessionExpireTime: new Date(Date.now() + 60 * 1000).toISOString(),
-        liveConnectConstraints: {
+        bidiGenerateContentSetup: {
           model: 'models/gemini-3.5-transcribe-live',
-          config: {
-            generationConfig: { responseModalities: ['TEXT'] },
-            inputAudioTranscription: { languageCodes: [language] },
-            realtimeInputConfig: { automaticActivityDetection: { disabled: false } }
-          }
+          generationConfig: { responseModalities: ['TEXT'] },
+          inputAudioTranscription: { languageCodes: [language] },
+          realtimeInputConfig: { automaticActivityDetection: { disabled: false } }
         }
       })
     });
