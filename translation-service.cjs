@@ -1,5 +1,5 @@
 // 服务端翻译模块：集中管理 API 密钥、提供方、模型、缓存和 Gemini 请求额度。
-const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const DEFAULT_GEMINI_MODEL = 'gemma-4-26b-a4b-it';
 const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 const MAX_BATCH_ITEMS = 8;
 const MAX_BATCH_CHARS = 6000;

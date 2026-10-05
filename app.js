@@ -28,7 +28,7 @@ const modelOptionsByProvider = {
 };
 
 function defaultModelFor(provider) {
-  return provider === 'openai' ? 'gpt-6-luna' : 'gemini-3.1-flash-lite';
+  return provider === 'openai' ? 'gpt-6-luna' : 'gemma-4-26b-a4b-it';
 }
 
 function populateModelOptions(provider, selectedModel) {
@@ -153,7 +153,7 @@ function showDraft(text, segmentId = 'draft') {
 // 从当前设置读取模型配置，并把已确认的语音交给翻译队列管理。
 function readProviderSettings() {
   const provider = localStorage.getItem('lingua_provider') || 'gemini';
-  const fallbackModel = provider === 'gemini' ? 'gemini-3.1-flash-lite' : 'gpt-6-luna';
+  const fallbackModel = provider === 'gemini' ? 'gemma-4-26b-a4b-it' : 'gpt-6-luna';
   const model = localStorage.getItem(`lingua_model_${provider}`) || fallbackModel;
   return { provider, model };
 }
