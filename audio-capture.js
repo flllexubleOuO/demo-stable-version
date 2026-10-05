@@ -50,6 +50,7 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
     onStatus('Requesting microphone access…');
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+      onStatus('Microphone ready · preparing Gemini Live…');
       const credentialResponse = await fetch('/api/asr/session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ language: languageCode(document.getElementById('sourceLang')?.value) }),
@@ -57,6 +58,7 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
       });
       const credentials = await credentialResponse.json();
       if (!credentialResponse.ok) throw new Error(credentials.error || 'Could not start ASR session.');
+      onStatus('Connecting to Gemini Live…');
 
       context = new AudioContext();
       await context.audioWorklet.addModule('/audio-worklet-processor.js');
@@ -72,14 +74,25 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
           realtimeInputConfig: { automaticActivityDetection: { disabled: false } }
         } });
       }, { once: true });
+      let resolveSetup;
+      let rejectSetup;
+      const setupComplete = new Promise((resolve, reject) => {
+        resolveSetup = resolve;
+        rejectSetup = reject;
+      });
+      // Attach a handler immediately in case the socket closes before the open wait finishes.
+      setupComplete.catch(() => {});
       socket.addEventListener('message', event => {
         let message;
         try { message = JSON.parse(event.data); } catch { return; }
         if (message.setupComplete) {
           ready = true;
           beginAudio();
+          resolveSetup();
         } else if (message.error) {
-          onError(new Error(message.error.message || 'Gemini Live reported an error.'));
+          const error = new Error(message.error.message || 'Gemini Live reported an error.');
+          rejectSetup(error);
+          onError(error);
         }
         const content = message.serverContent;
         if (content?.interimInputTranscription?.text) onDraft(content.interimInputTranscription.text, 'gemini-live');
@@ -94,6 +107,7 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
       socket.addEventListener('error', () => { if (active) onError(new Error('Gemini Live WebSocket connection failed.')); });
       socket.addEventListener('close', () => {
         ready = false;
+        rejectSetup(new Error('Gemini Live closed the connection before setup completed.'));
         if (active) { onStatus('ASR connection interrupted. Stop and restart to reconnect.'); stop(); }
       });
       await new Promise((resolve, reject) => {
@@ -101,6 +115,17 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
         socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
         socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not connect to Gemini Live.')); }, { once: true });
       });
+      let setupTimeout;
+      try {
+        await Promise.race([
+          setupComplete,
+          new Promise((_, reject) => {
+            setupTimeout = setTimeout(() => reject(new Error('Gemini Live setup timed out. Check the API key, model access, and network connection, then try again.')), 15000);
+          })
+        ]);
+      } finally {
+        clearTimeout(setupTimeout);
+      }
     } catch (error) {
       stop();
       onStatus('ASR unavailable');
