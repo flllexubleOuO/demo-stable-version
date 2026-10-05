@@ -2,14 +2,15 @@
 
 Current release: **0.3.0** (third development iteration, 2026-10-04).
 
-This iteration implements the first real-time speech recognition path for the MVP described in the 0.1 development brief. Translation remains available through the existing provider setting.
+This iteration implements real-time speech recognition and sentence translation for the MVP described in the 0.1 development brief.
 
 ## 0.3.0 development status
 
 - Completed: `/healthz` reports version and ASR readiness; static serving is restricted to a frontend file allowlist. Microphone capture is routed through an AudioWorklet that genuinely resamples to mono 16 kHz PCM16LE. The browser uses a single-use, short-lived Gemini token minted by the local server, then streams audio over WebSocket to Gemini Live. Interim and final transcript events render in the original-text column, with final latency measured from the last voiced audio frame.
+- Completed: final transcript segments enter a short batching queue and are translated by the provider and model selected in Settings. Translation results appear alongside the corresponding original text; failures are shown in the translation cell and as a toast.
 - Requires configuration: select Gemini in Settings and save a Gemini API key. The permanent key stays in local server memory; the browser receives only a short-lived token restricted to the Live model and transcription setup. `gemini-3.5-transcribe-live` is the selected ASR model.
-- Not yet verified against a real microphone: no API key is configured in this workspace, so recognition quality and measured latency still require a live run. Audio streams directly from the browser to Gemini using its official ephemeral-token flow; server-side audio relay and durable capture sessions are not implemented.
-- Deferred as requested: translation queue and phone audience broadcast.
+- Audio streams directly from the browser to Gemini using its official ephemeral-token flow; server-side audio relay and durable capture sessions are not implemented.
+- Deferred: phone audience broadcast.
 - Not started: M1 event and materials flow and M3 persistence, recovery, access control, and deployment.
 
 See the pasted MVP development brief (version 0.1, 2026-10-04) for scope and acceptance criteria.

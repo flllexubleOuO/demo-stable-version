@@ -398,8 +398,9 @@ function reviseTranscriptSegment({ segmentId, chunks }) {
 // 两个功能模块分别持有自己的队列和状态，页面只注入错误提示回调。
 const translationQueue = createTranslationQueue({
   onError(error) {
-    if (error.message.includes('OPENAI_API_KEY')) {
-      toast('Set OPENAI_API_KEY in the terminal, then restart the local server.');
+    const missingKey = error.message.match(/No (Gemini|OpenAI) API key is set/);
+    if (missingKey) {
+      toast(`Save a ${missingKey[1]} API key in Settings to enable translation.`);
       return;
     }
     toast(`Translation failed: ${error.message}`);
@@ -411,10 +412,12 @@ const speech = createRealtimeAsr({
   onChunk: (text, metadata = {}) => {
     showDraft('', `asr:${metadata.itemId || 'live'}`);
     if (!text.trim()) return;
-    const row = addMessage(text.trim(), false);
-    row.translationNode.textContent = `ASR final · ${metadata.latencyMs ?? 'n/a'} ms`;
+    const finalText = text.trim();
+    const row = addMessage(finalText, false);
+    row.translationNode.textContent = 'Translating…';
     row.wrapper.dataset.asrLatencyMs = String(metadata.latencyMs ?? '');
     logDiagnostic('ASR', 'transcript-final', { latencyMs: metadata.latencyMs, captureLatencyMs: metadata.captureLatencyMs, itemId: metadata.itemId });
+    enqueueTranslation(finalText, row);
   },
   onStatus: setStatus,
   onListening: updateMicUI,
