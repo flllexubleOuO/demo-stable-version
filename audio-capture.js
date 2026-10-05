@@ -82,9 +82,17 @@ export function createRealtimeAsr({ onDraft = () => {}, onChunk = () => {}, onSt
       });
       // Attach a handler immediately in case the socket closes before the open wait finishes.
       setupComplete.catch(() => {});
-      socket.addEventListener('message', event => {
+      socket.addEventListener('message', async event => {
         let message;
-        try { message = JSON.parse(event.data); } catch { return; }
+        try {
+          let payload = event.data;
+          if (payload instanceof Blob) payload = await payload.text();
+          else if (payload instanceof ArrayBuffer) payload = new TextDecoder().decode(payload);
+          message = JSON.parse(payload);
+        } catch (error) {
+          onError(new Error(`Could not decode Gemini Live response: ${error.message}`));
+          return;
+        }
         if (message.setupComplete) {
           ready = true;
           beginAudio();
