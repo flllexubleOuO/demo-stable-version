@@ -1,19 +1,23 @@
-# Lingua · Development 0.3.0
+# Lingua 1.0.0
 
-Current release: **0.3.0** (third development iteration, 2026-10-04).
+Online release: **1.0.0** (2026-10-06).
 
-This iteration implements real-time speech recognition and sentence translation for the MVP described in the 0.1 development brief.
+Lingua provides browser-based real-time speech recognition and sentence translation. Gemini Live transcribes microphone audio; final transcript segments are translated by the provider and model selected in Settings. Gemini uses `gemma-4-26b-a4b-it` by default.
 
-## 0.3.0 development status
+## Included
 
-- Completed: `/healthz` reports version and ASR readiness; static serving is restricted to a frontend file allowlist. Microphone capture is routed through an AudioWorklet that genuinely resamples to mono 16 kHz PCM16LE. The browser uses a single-use, short-lived Gemini token minted by the local server, then streams audio over WebSocket to Gemini Live. Interim and final transcript events render in the original-text column, with final latency measured from the last voiced audio frame.
-- Completed: final transcript segments enter a short batching queue and are translated by the provider and model selected in Settings. Translation results appear alongside the corresponding original text; failures are shown in the translation cell and as a toast.
-- Requires configuration: select Gemini in Settings and save a Gemini API key. The key is stored in the service user's private settings file (`~/.config/lingua/settings.json`, mode `0600`) and survives service restarts and deployments; environment API keys take precedence. The browser receives only a short-lived token restricted to the Live model and transcription setup. `gemini-3.5-transcribe-live` is the ASR model; `gemma-4-26b-a4b-it` is the default translation model.
-- Audio streams directly from the browser to Gemini using its official ephemeral-token flow; server-side audio relay and durable capture sessions are not implemented.
-- Deferred: phone audience broadcast.
-- Not started: M1 event and materials flow and M3 persistence, recovery, access control, and deployment.
+- Live transcription with interim and final text, using mono 16 kHz PCM audio and a short-lived Gemini token.
+- Sentence translation in configurable source and target languages, with batched requests and visible errors.
+- Persistent provider settings and API keys on the server. Settings are stored at `~/.config/lingua/settings.json` with directory mode `0700` and file mode `0600`; environment API keys take precedence. The file is not encrypted at rest and is readable by the service user and root.
+- End-to-end translation timing records in `logs/diagnostics.jsonl`; records contain timing and model metadata, not recognized text. Optional `?debugSpeech=1` diagnostics can include recognized speech.
+- GitHub Actions deployment to EC2 with service restart and health check.
 
-See the pasted MVP development brief (version 0.1, 2026-10-04) for scope and acceptance criteria.
+## Current limits
+
+- Microphone audio is streamed from the browser directly to Gemini Live. The service does not relay or retain audio.
+- Conversation history is not persisted, and there is no account or access-control system.
+- Phone audience broadcast and the M1 event/materials workflow are not included.
+- Microphone capture requires a secure browser context: `localhost` for local use or HTTPS in production.
 
 A browser-based demo for real-time speech recognition and translation. Translation requests are sent through the local Node.js service to the model provider selected in Settings.
 

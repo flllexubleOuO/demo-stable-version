@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createTranslationService } = require('./translation-service.cjs');
 
 const root = __dirname;
-const version = '0.3.0';
+const version = '1.0.0';
 const port = Number(process.env.PORT || 4173);
 const translationService = createTranslationService();
 const diagnosticDirectory = path.join(root, 'logs');
