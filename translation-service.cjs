@@ -1,4 +1,8 @@
 // 服务端翻译模块：集中管理 API 密钥、提供方、模型、缓存和 Gemini 请求额度。
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
 const DEFAULT_GEMINI_MODEL = 'gemma-4-26b-a4b-it';
 const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 const MAX_BATCH_ITEMS = 8;
@@ -81,12 +85,22 @@ function parseTranslationArray(output, expectedCount) {
 }
 
 function createTranslationService({ env = process.env, fetchImpl = fetch } = {}) {
+  const settingsFile = path.resolve(env.LINGUA_SETTINGS_FILE || path.join(os.homedir(), '.config', 'lingua', 'settings.json'));
+  let savedSettings = {};
+  try {
+    savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw new Error(`Could not read saved Lingua settings: ${error.message}`);
+  }
+  if (!savedSettings || typeof savedSettings !== 'object' || Array.isArray(savedSettings)) savedSettings = {};
+
   const runtimeKeys = {
-    gemini: env.GEMINI_API_KEY || '',
-    openai: env.OPENAI_API_KEY || ''
+    gemini: env.GEMINI_API_KEY || (typeof savedSettings.keys?.gemini === 'string' ? savedSettings.keys.gemini : ''),
+    openai: env.OPENAI_API_KEY || (typeof savedSettings.keys?.openai === 'string' ? savedSettings.keys.openai : '')
   };
-  let runtimeProvider = env.OPENAI_API_KEY && !env.GEMINI_API_KEY ? 'openai' : 'gemini';
-  let runtimeModel = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  const savedProvider = savedSettings.provider === 'openai' ? 'openai' : 'gemini';
+  let runtimeProvider = savedSettings.provider ? savedProvider : (env.OPENAI_API_KEY && !env.GEMINI_API_KEY ? 'openai' : 'gemini');
+  let runtimeModel = env.GEMINI_MODEL || savedSettings.model || DEFAULT_GEMINI_MODEL;
 
   // 这些状态按模型和服务进程共享；默认留出 10% 余量，避免刚好触及项目级限额。
   const configuredGeminiRpm = Number(env.GEMINI_RPM);
@@ -109,12 +123,27 @@ function createTranslationService({ env = process.env, fetchImpl = fetch } = {})
     };
   }
 
+  function persistSettings(settings) {
+    const directory = path.dirname(settingsFile);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    fs.chmodSync(directory, 0o700);
+    const temporaryFile = `${settingsFile}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(settings), { encoding: 'utf8', mode: 0o600 });
+    fs.chmodSync(temporaryFile, 0o600);
+    fs.renameSync(temporaryFile, settingsFile);
+    fs.chmodSync(settingsFile, 0o600);
+  }
+
   function configure(data) {
     const provider = data.provider === 'openai' ? 'openai' : 'gemini';
     const apiKey = typeof data.apiKey === 'string' ? data.apiKey.trim() : '';
-    if (apiKey) runtimeKeys[provider] = apiKey;
+    const nextKeys = { ...runtimeKeys };
+    if (apiKey) nextKeys[provider] = apiKey;
+    const nextModel = readModel(data.model, runtimeModel);
+    persistSettings({ keys: nextKeys, provider, model: nextModel });
+    Object.assign(runtimeKeys, nextKeys);
     runtimeProvider = provider;
-    runtimeModel = readModel(data.model, runtimeModel);
+    runtimeModel = nextModel;
     return getSettings();
   }
 
